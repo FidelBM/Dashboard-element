@@ -12,6 +12,25 @@ type LoginFormProps = {
   callbackUrl: string;
 };
 
+function getSafeNavigationTarget(url: string) {
+  if (!url) return "/dashboard";
+
+  if (url.startsWith("/")) {
+    return url;
+  }
+
+  if (typeof window === "undefined") {
+    return "/dashboard";
+  }
+
+  try {
+    const parsedUrl = new URL(url, window.location.origin);
+    return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}` || "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
+}
+
 export function LoginForm({ callbackUrl }: LoginFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +55,7 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
             const formData = new FormData(event.currentTarget);
             const email = String(formData.get("email") ?? "");
             const password = String(formData.get("password") ?? "");
+            const safeCallbackUrl = getSafeNavigationTarget(callbackUrl);
 
             setError(null);
             startTransition(async () => {
@@ -43,7 +63,7 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
                 email,
                 password,
                 redirect: false,
-                callbackUrl
+                callbackUrl: safeCallbackUrl
               });
 
               if (result?.error) {
@@ -51,7 +71,7 @@ export function LoginForm({ callbackUrl }: LoginFormProps) {
                 return;
               }
 
-              router.push(result?.url ?? callbackUrl);
+              router.push(getSafeNavigationTarget(result?.url ?? safeCallbackUrl));
               router.refresh();
             });
           }}
