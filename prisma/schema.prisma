@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  SUPER_ADMIN
+  ADMIN_ELEMENT
+  FLEET_MANAGER
+  ANALYST_OPERATIONS
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoyaltyTier {
+  BASE
+  PARTNER
+  ELITE
+  STRATEGIC
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  PICKUP
+  VAN
+  TRUCK
+  HEAVY
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  RETIRED
+}
+
+enum PurchaseType {
+  FLEET_EXPANSION
+  RENEWAL
+  ADDITIONAL_SERVICES
+  MULTIPRODUCT
+}
+
+enum IncentiveRuleType {
+  PURCHASE_AMOUNT
+  VEHICLE_ADDITION
+  EARLY_RENEWAL
+  MULTI_PRODUCT
+  POSITIVE_BEHAVIOR
+  ECOSYSTEM_USAGE
+}
+
+enum CampaignType {
+  STANDARD
+  WORLD_CUP
+}
+
+enum RedemptionStatus {
+  PENDING
+  APPROVED
+  FULFILLED
+  REJECTED
+}
+
+enum PointTransactionType {
+  EARNED
+  ADJUSTMENT
+  REDEMPTION
+  BONUS
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        RoleCode @unique
+  name        String
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+}
+
+model Company {
+  id             String             @id @default(cuid())
+  name           String
+  industry       String?
+  status         UserStatus         @default(ACTIVE)
+  accountOwner   String?
+  foundedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  users          User[]
+  fleet          Fleet?
+  loyaltyProfile LoyaltyProfile?
+  purchases      Purchase[]
+  redemptions    RewardRedemption[]
+  transactions   PointTransaction[]
+}
+
+model User {
+  id                String             @id @default(cuid())
+  name              String
+  email             String             @unique
+  passwordHash      String
+  status            UserStatus         @default(ACTIVE)
+  roleId            String
+  companyId         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  role              Role               @relation(fields: [roleId], references: [id])
+  company           Company?           @relation(fields: [companyId], references: [id])
+  auditLogs         AuditLog[]
+  rewardRedemptions RewardRedemption[]
+  pointTransactions PointTransaction[]
+
+  @@index([companyId])
+  @@index([roleId])
+}
+
+model Fleet {
+  id             String    @id @default(cuid())
+  companyId      String    @unique
+  activeVehicles Int       @default(0)
+  segments       String?
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id])
+  vehicles       Vehicle[]
+}
+
+model Vehicle {
+  id          String        @id @default(cuid())
+  fleetId     String
+  label       String
+  vin         String        @unique
+  type        VehicleType
+  status      VehicleStatus @default(ACTIVE)
+  acquiredAt  DateTime
+  monthlyCost Decimal?      @db.Decimal(10, 2)
+  fleet       Fleet         @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+
+  @@index([fleetId])
+}
+
+model LoyaltyProfile {
+  id                String                @id @default(cuid())
+  companyId         String                @unique
+  loyaltyScore      Int                   @default(0)
+  tier              LoyaltyTier           @default(BASE)
+  totalPoints       Int                   @default(0)
+  purchasePoints    Int                   @default(0)
+  redeemedPoints    Int                   @default(0)
+  tenureScore       Int                   @default(0)
+  serviceUsageScore Int                   @default(0)
+  fleetSizeScore    Int                   @default(0)
+  renewalScore      Int                   @default(0)
+  updatedAt         DateTime              @updatedAt
+  company           Company               @relation(fields: [companyId], references: [id])
+  scoreHistory      LoyaltyScoreHistory[]
+  pointTransactions PointTransaction[]
+
+  @@index([tier])
+}
+
+model LoyaltyScoreHistory {
+  id                String         @id @default(cuid())
+  loyaltyProfileId  String
+  score             Int
+  tier              LoyaltyTier
+  tenureScore       Int
+  serviceUsageScore Int
+  fleetSizeScore    Int
+  renewalScore      Int
+  note              String?
+  recordedAt        DateTime       @default(now())
+  loyaltyProfile    LoyaltyProfile @relation(fields: [loyaltyProfileId], references: [id], onDelete: Cascade)
+
+  @@index([loyaltyProfileId, recordedAt])
+}
+
+model Purchase {
+  id                 String             @id @default(cuid())
+  companyId          String
+  title              String
+  type               PurchaseType
+  amount             Decimal            @db.Decimal(12, 2)
+  vehiclesAdded      Int                @default(0)
+  additionalServices Int                @default(0)
+  ecosystemUsage     Int                @default(0)
+  renewedEarly       Boolean            @default(false)
+  positiveBehavior   Boolean            @default(false)
+  pointsAwarded      Int                @default(0)
+  purchasedAt        DateTime
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions       PointTransaction[]
+
+  @@index([companyId, purchasedAt])
+}
+
+model IncentiveRule {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  ruleType    IncentiveRuleType
+  threshold   Decimal?          @db.Decimal(12, 2)
+  points      Int
+  active      Boolean           @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([ruleType, active])
+}
+
+model RewardCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isWorldCup  Boolean  @default(false)
+  rewards     Reward[]
+}
+
+model Campaign {
+  id                   String            @id @default(cuid())
+  name                 String
+  slug                 String            @unique
+  type                 CampaignType
+  description          String?
+  bonusPoints          Int               @default(0)
+  eligibilityMinTier   LoyaltyTier?
+  eligibilityMinPoints Int?
+  startsAt             DateTime
+  endsAt               DateTime
+  active               Boolean           @default(true)
+  rewards              Reward[]
+  worldCupBenefits     WorldCupBenefit[]
+
+  @@index([type, active, startsAt, endsAt])
+}
+
+model Reward {
+  id          String             @id @default(cuid())
+  name        String
+  description String
+  categoryId  String
+  minTier     LoyaltyTier
+  pointsCost  Int
+  stock       Int?
+  active      Boolean            @default(true)
+  campaignId  String?
+  createdAt   DateTime           @default(now())
+  category    RewardCategory     @relation(fields: [categoryId], references: [id])
+  campaign    Campaign?          @relation(fields: [campaignId], references: [id])
+  worldCup    WorldCupBenefit?
+  redemptions RewardRedemption[]
+
+  @@index([categoryId, minTier, active])
+}
+
+model WorldCupBenefit {
+  id             String   @id @default(cuid())
+  rewardId       String   @unique
+  campaignId     String
+  venue          String?
+  activationType String?
+  hospitality    Boolean  @default(false)
+  limitedEdition Boolean  @default(false)
+  reward         Reward   @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model RewardRedemption {
+  id          String           @id @default(cuid())
+  rewardId    String
+  companyId   String
+  userId      String?
+  pointsSpent Int
+  status      RedemptionStatus @default(PENDING)
+  redeemedAt  DateTime         @default(now())
+  reward      Reward           @relation(fields: [rewardId], references: [id])
+  company     Company          @relation(fields: [companyId], references: [id])
+  user        User?            @relation(fields: [userId], references: [id])
+
+  @@index([companyId, redeemedAt])
+}
+
+model PointTransaction {
+  id               String               @id @default(cuid())
+  loyaltyProfileId String
+  companyId        String
+  purchaseId       String?
+  userId           String?
+  type             PointTransactionType
+  points           Int
+  description      String
+  createdAt        DateTime             @default(now())
+  loyaltyProfile   LoyaltyProfile       @relation(fields: [loyaltyProfileId], references: [id], onDelete: Cascade)
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchase         Purchase?            @relation(fields: [purchaseId], references: [id])
+  user             User?                @relation(fields: [userId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([loyaltyProfileId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorName  String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
